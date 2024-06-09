@@ -179,6 +179,7 @@ UniValue blockheaderToJSON(const CBlockIndex* tip, const CBlockIndex* blockindex
     result.pushKV("chainwork", blockindex->nChainWork.GetHex());
     result.pushKV("nTx", (uint64_t)blockindex->nTx);
 
+
     if (blockindex->pprev)
         result.pushKV("previousblockhash", blockindex->pprev->GetBlockHash().GetHex());
     if (pnext)
@@ -186,10 +187,12 @@ UniValue blockheaderToJSON(const CBlockIndex* tip, const CBlockIndex* blockindex
     return result;
 }
 
+
 UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIndex* tip, const CBlockIndex* blockindex, TxVerbosity verbosity)
 {
     UniValue result = blockheaderToJSON(tip, blockindex);
-
+    int algo = GetAlgo(block.nVersion);
+    result.pushKV("pow_algo", GetAlgoNameByIndex(blockindex));
     result.pushKV("strippedsize", (int)::GetSerializeSize(block, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS));
     result.pushKV("size", (int)::GetSerializeSize(block, PROTOCOL_VERSION));
     result.pushKV("weight", (int)::GetBlockWeight(block));
@@ -1288,7 +1291,13 @@ RPCHelpMan getblockchaininfo()
                 {RPCResult::Type::BOOL, "automatic_pruning", /*optional=*/true, "whether automatic pruning is enabled (only present if pruning is enabled)"},
                 {RPCResult::Type::NUM, "prune_target_size", /*optional=*/true, "the target size used by pruning (only present if automatic pruning is enabled)"},
                 {RPCResult::Type::STR, "warnings", "any network and blockchain warnings"},
-            }},
+                {RPCResult::Type::OBJ, "difficulties", "object containing difficulty for each algorithm",
+                    {
+                        {RPCResult::Type::STR, "name", "the name of the algorithm."},
+                        {RPCResult::Type::NUM, "difficulty", "the proof-of-work difficulty as a multiple of the minimum difficulty."},
+                    }},
+
+ }},
         RPCExamples{
             HelpExampleCli("getblockchaininfo", "")
             + HelpExampleRpc("getblockchaininfo", "")
@@ -1325,6 +1334,17 @@ RPCHelpMan getblockchaininfo()
             obj.pushKV("prune_target_size",  node::nPruneTarget);
         }
     }
+    // Add algorithm difficulties
+    UniValue algoDiffs(UniValue::VOBJ);
+    for (unsigned int i = 0; i < NUM_ALGOS; i++) {
+        if (IsAlgoActive(chainman.ActiveChain().Tip(), i, chainman.GetConsensus())) {
+            std::string algoName = GetAlgoName(i);
+            unsigned int algoDiff = GetNextWorkRequiredMultiAlgo(chainman.ActiveChain().Tip(), nullptr, chainman.GetConsensus(), i);
+            algoDiffs.pushKV(algoName, GetDifficulty(algoDiff));
+        }
+    }
+    obj.pushKV("difficulties", algoDiffs);
+
 
     obj.pushKV("warnings", GetWarnings(false).original);
     return obj;
