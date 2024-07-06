@@ -4,7 +4,7 @@
 
 #include <qt/modaloverlay.h>
 #include <qt/forms/ui_modaloverlay.h>
-
+#include <clientversion.h>
 #include <chainparams.h>
 #include <qt/guiutil.h>
 
@@ -29,6 +29,9 @@ userClosed(false)
 
     blockProcessTime.clear();
     setVisible(false);
+    //Versionlabel
+    ui->versionLabel->setText(QString::fromStdString(FormatFullVersion()));
+
     if (!enable_wallet) {
         ui->infoText->setVisible(false);
         ui->infoTextStrong->setText(tr("%1 is currently syncing.  It will download headers and blocks from peers and validate them until reaching the tip of the block chain.").arg(PACKAGE_NAME));
