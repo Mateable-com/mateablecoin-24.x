@@ -31,7 +31,7 @@ public:
     explicit SplashScreen(const NetworkStyle *networkStyle);
     ~SplashScreen();
     void setNode(interfaces::Node& node);
-
+    QString getClientCopyright(); // Declaration of getClientCopyright
 protected:
     void paintEvent(QPaintEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
@@ -42,7 +42,7 @@ public Q_SLOTS:
 
     /** Show message and progress */
     void showMessage(const QString &message, int alignment, const QColor &color);
-
+    
     /** Handle wallet load notifications. */
     void handleLoadWallet();
 

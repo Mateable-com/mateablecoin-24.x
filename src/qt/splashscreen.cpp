@@ -28,13 +28,14 @@
 
 
 SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
-    : QWidget(), curAlignment(0)
+    : QWidget(nullptr, Qt::FramelessWindowHint), curAlignment(0)
 {
     // set reference point, paddings
     int paddingRight            = 30;
     int paddingTop              = 50;
     int titleVersionVSpace      = 17;
     int titleCopyrightVSpace    = 40;
+    int titleCoinVSpace         = 25;
 
     float fontFactor            = 1.0;
     float devicePixelRatio      = 1.0;
@@ -42,8 +43,10 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
 
     // define text to place
     QString titleText       = PACKAGE_NAME;
+    QString coinText       = "MateableCoin";
+
     QString versionText     = QString("Version %1").arg(QString::fromStdString(FormatFullVersion()));
-    QString copyrightText   = QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR)).c_str());
+    //QString copyrightText   = QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR)).c_str());
     const QString& titleAddText    = networkStyle->getTitleAddText();
 
     QString font            = QApplication::font().toString();
@@ -56,37 +59,73 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
     pixmap.setDevicePixelRatio(devicePixelRatio);
 
     QPainter pixPaint(&pixmap);
-    pixPaint.setPen(QColor(100,100,100));
+    pixPaint.fillRect(pixmap.rect(), Qt::black); // Clearing pixmap with black color
+    pixPaint.setPen(Qt::white); // Set text color to white
+    QPixmap backgroundImage(":/icons/splash");
+    backgroundImage = backgroundImage.scaled(pixmap.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    pixPaint.drawPixmap(0, 0, backgroundImage);
 
     // draw a slightly radial gradient
-    QRadialGradient gradient(QPoint(0,0), splashSize.width()/devicePixelRatio);
-    gradient.setColorAt(0, Qt::white);
-    gradient.setColorAt(1, QColor(247,247,247));
-    QRect rGradient(QPoint(0,0), splashSize);
-    pixPaint.fillRect(rGradient, gradient);
+    //QRadialGradient gradient(QPoint(0,0), splashSize.width()/devicePixelRatio);
+    //gradient.setColorAt(0, Qt::white);
+    //gradient.setColorAt(1, QColor(247,247,247));
+    //QRect rGradient(QPoint(0,0), splashSize);
+    //pixPaint.fillRect(rGradient, gradient);
 
-    // draw the bitcoin icon, expected size of PNG: 1024x1024
-    QRect rectIcon(QPoint(-150,-122), QSize(430,430));
+// Calculate the desired size for the icon
+const int iconSize = 180; // Adjust this value as needed
 
-    const QSize requiredSize(1024,1024);
-    QPixmap icon(networkStyle->getAppIcon().pixmap(requiredSize));
+// Calculate the position for the icon based on the splash screen size
+int iconX = (splashSize.width() - iconSize) / 2 - 380; // Adjust this value to move the icon towards the rightint iconY = paddingTop; // Adjust this value to position the icon closer to the top// Define the QRect for the icon
+int iconY = paddingTop - 40; // Adjust this value to position the icon closer to the top
 
+QRect rectIcon(QPoint(iconX, iconY), QSize(iconSize, iconSize));
+
+// Load the icon with the desired size
+QPixmap icon(networkStyle->getAppIcon().pixmap(iconSize, iconSize));
     pixPaint.drawPixmap(rectIcon, icon);
+// Calculate the position for the coin text
+int coinTextX = (splashSize.width() - QFontMetrics(QFont(font, 15 * fontFactor)).width(coinText)) / 2 - 380;
+int coinTextY = iconY + iconSize + titleCoinVSpace; // Adjust this value to position the coin text below the icon
+
+// Define colors for the text
+QColor mateableColor = QColor(Qt::white);
+QColor coinColor = QColor(Qt::white);
+
+// Draw the "Mateable" text
+pixPaint.setFont(QFont(font, 15 * fontFactor, QFont::Bold));
+pixPaint.setPen(mateableColor); // Set the color for the "Mateable" text
+pixPaint.drawText(coinTextX, coinTextY, "Mateable");
+
+// Calculate the position for the "Coin" text within the same line
+int coinTextWidth = QFontMetrics(QFont(font, 15 * fontFactor)).width("Mateable");
+coinTextX += coinTextWidth; // Adjust the position to follow "Mateable"
+
+// Add an offset to ensure the "Coin" text starts after "Mateable" without overlapping
+int coinTextXOffset = 13; // Adjust this value as needed to add spacing between "Mateable" and "Coin"
+coinTextX += coinTextXOffset;
+
+// Draw the "Coin" text
+pixPaint.setPen(coinColor); // Set the color for the "Coin" text
+pixPaint.drawText(coinTextX, coinTextY, "Coin");
 
     // check font size and drawing with
-    pixPaint.setFont(QFont(font, 33*fontFactor));
+    pixPaint.setFont(QFont(font, 33*fontFactor, QFont::Bold));
     QFontMetrics fm = pixPaint.fontMetrics();
     int titleTextWidth = GUIUtil::TextWidth(fm, titleText);
     if (titleTextWidth > 176) {
         fontFactor = fontFactor * 176 / titleTextWidth;
     }
 
-    pixPaint.setFont(QFont(font, 33*fontFactor));
+    // Calculate the position for the title text
+    int titleX = pixmap.width() / devicePixelRatio - titleTextWidth - paddingRight;
+
+    pixPaint.setFont(QFont(font, 33*fontFactor, QFont::Bold));
     fm = pixPaint.fontMetrics();
     titleTextWidth  = GUIUtil::TextWidth(fm, titleText);
     pixPaint.drawText(pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight,paddingTop,titleText);
 
-    pixPaint.setFont(QFont(font, 15*fontFactor));
+    pixPaint.setFont(QFont(font, 15*fontFactor, QFont::Bold));
 
     // if the version string is too long, reduce size
     fm = pixPaint.fontMetrics();
@@ -96,18 +135,20 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
         titleVersionVSpace -= 5;
     }
     pixPaint.drawText(pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight+2,paddingTop+titleVersionVSpace,versionText);
+    
 
-    // draw copyright stuff
-    {
-        pixPaint.setFont(QFont(font, 10*fontFactor));
-        const int x = pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight;
-        const int y = paddingTop+titleCopyrightVSpace;
-        QRect copyrightRect(x, y, pixmap.width() - x - paddingRight, pixmap.height() - y);
-        pixPaint.drawText(copyrightRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, copyrightText);
-    }
+    // Calculate the position for the copyright text
+    int copyrightX = titleX + 90; // Adjust this value to position the copyright text slightly to the left of the title text
 
+// Draw copyright stuff
+{
+    pixPaint.setFont(QFont(font, 15*fontFactor, QFont::Bold));
+    const int y = paddingTop + titleCopyrightVSpace;
+    QRect copyrightRect(copyrightX, y, pixmap.width() - copyrightX - paddingRight, pixmap.height() - y);
+    pixPaint.drawText(copyrightRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, getClientCopyright());
+}
     // draw additional text if special network
-    if(!titleAddText.isEmpty()) {
+   if(!titleAddText.isEmpty()) {
         QFont boldFont = QFont(font, 10*fontFactor);
         boldFont.setWeight(QFont::Bold);
         pixPaint.setFont(boldFont);
@@ -130,6 +171,31 @@ SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
     installEventFilter(this);
 
     GUIUtil::handleCloseWindowShortcut(this);
+}
+
+QString SplashScreen::getClientCopyright()
+{
+    std::string clientName(CLIENT_NAME);
+
+    // Convert clientName to lowercase for case-insensitive comparison
+    std::transform(clientName.begin(), clientName.end(), clientName.begin(), ::tolower);
+
+    size_t mateableIndex = clientName.find("mateable");
+    size_t bitcoinIndex = clientName.find("bitcoin");
+
+    QString mateableCopyright = QString("\u00A9 %1-%2 The Mateable Core Developers")
+        .arg(QString::number(2022), QString::number(COPYRIGHT_YEAR));
+
+    QString bitcoinCopyright = QString("\u00A9 %1-%2 The Bitcoin Core Developers")
+        .arg(QString::number(2009), QString::number(COPYRIGHT_YEAR));
+
+    if (mateableIndex != std::string::npos && bitcoinIndex != std::string::npos) {
+        // Both Mateable and Bitcoin Core found
+        return mateableCopyright + "\n" + bitcoinCopyright;
+    }
+
+    // Neither Mateable nor Bitcoin Core found
+    return "";
 }
 
 SplashScreen::~SplashScreen()
@@ -170,14 +236,13 @@ void SplashScreen::finish()
     hide();
     deleteLater(); // No more need for this
 }
-
 static void InitMessage(SplashScreen *splash, const std::string &message)
 {
     bool invoked = QMetaObject::invokeMethod(splash, "showMessage",
         Qt::QueuedConnection,
         Q_ARG(QString, QString::fromStdString(message)),
         Q_ARG(int, Qt::AlignBottom|Qt::AlignHCenter),
-        Q_ARG(QColor, QColor(55,55,55)));
+        Q_ARG(QColor, QColor(255, 255, 255))); // Change color to white
     assert(invoked);
 }
 
@@ -234,6 +299,7 @@ void SplashScreen::paintEvent(QPaintEvent *event)
     painter.drawPixmap(0, 0, pixmap);
     QRect r = rect().adjusted(5, 5, -5, -5);
     painter.setPen(curColor);
+
     painter.drawText(r, curAlignment, curMessage);
 }
 
