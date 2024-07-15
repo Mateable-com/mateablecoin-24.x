@@ -33,6 +33,7 @@ public:
     explicit OverviewPage(const PlatformStyle *platformStyle, QWidget *parent = nullptr);
     ~OverviewPage();
 
+    void setPriceData();
     void setClientModel(ClientModel *clientModel);
     void setWalletModel(WalletModel *walletModel);
     void showOutOfSyncWarning(bool fShow);
