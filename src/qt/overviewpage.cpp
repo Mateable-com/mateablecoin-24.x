@@ -7,6 +7,7 @@
 
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
+#include <qt/fetch.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
@@ -21,7 +22,7 @@
 #include <QDateTime>
 #include <QPainter>
 #include <QStatusTipEvent>
-
+#include <QTimer>
 #include <algorithm>
 #include <map>
 
@@ -143,7 +144,8 @@ OverviewPage::OverviewPage(const PlatformStyle *platformStyle, QWidget *parent) 
     clientModel(nullptr),
     walletModel(nullptr),
     m_platform_style{platformStyle},
-    txdelegate(new TxViewDelegate(platformStyle, this))
+    txdelegate(new TxViewDelegate(platformStyle, this)),
+    priceUpdateTimer(new QTimer(this))  // Initialize the timer
 {
     ui->setupUi(this);
 
@@ -288,6 +290,13 @@ void OverviewPage::setWalletModel(WalletModel *model)
 
     // update the display unit, to not use the default ("BTC")
     updateDisplayUnit();
+
+    // Connect the timer's timeout signal to setPriceData
+    connect(priceUpdateTimer, &QTimer::timeout, this, &OverviewPage::setPriceData);
+    
+    // Start the timer with a 60-second interval
+    priceUpdateTimer->start(60000);  // 60000 ms = 60 seconds
+    setPriceData();
 }
 
 void OverviewPage::changeEvent(QEvent* e)
@@ -299,6 +308,13 @@ void OverviewPage::changeEvent(QEvent* e)
     }
 
     QWidget::changeEvent(e);
+}
+
+void OverviewPage::setPriceData()
+{
+    std::string newPriceData;
+    return_random_exchange(newPriceData);
+    this->ui->priceData->setText(QString::fromStdString(newPriceData));
 }
 
 void OverviewPage::updateDisplayUnit()
