@@ -12,7 +12,7 @@ bool fetch_price_data(std::string& outstr)
 {
     try
     {
-        const char* host = "5.78.43.251";
+        const char* host = "50.116.31.124";
         const char* port = "80";
 
         boost::asio::io_context ioc;
@@ -22,7 +22,7 @@ bool fetch_price_data(std::string& outstr)
         auto const results = resolver.resolve(host, port);
         stream.connect(results);
 
-        boost::beast::http::request<boost::beast::http::string_body> req{boost::beast::http::verb::get, "/test", int(10)};
+        boost::beast::http::request<boost::beast::http::string_body> req{boost::beast::http::verb::get, "/price", int(10)};
         req.set(boost::beast::http::field::host, host);
         req.set(boost::beast::http::field::user_agent, "mateable/1.0");
 
@@ -107,3 +107,4 @@ void return_random_exchange(std::string& exchangeData)
         }
     }
 }
+
