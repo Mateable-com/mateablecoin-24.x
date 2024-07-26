@@ -55,7 +55,7 @@ using node::UpdateTime;
  * or from the last difficulty change if 'lookup' is nonpositive.
  * If 'height' is nonnegative, compute the estimate at the time when a given block was found.
  */
-static UniValue GetNetworkHashPS(int lookup, int height, const CChain& active_chain) {
+double GetNetworkHashPS(int lookup, int height, const CChain& active_chain, const std::string& algoName = "") {
     const CBlockIndex* pb = active_chain.Tip();
 
     if (height >= 0 && height < active_chain.Height()) {
@@ -87,9 +87,24 @@ static UniValue GetNetworkHashPS(int lookup, int height, const CChain& active_ch
     if (minTime == maxTime)
         return 0;
 
-    arith_uint256 workDiff = pb->nChainWork - pb0->nChainWork;
-    int64_t timeDiff = maxTime - minTime;
+    arith_uint256 workDiff;
+    if (algoName.empty()) {
+        workDiff = pb->nChainWork - pb0->nChainWork;
+    } else {
+        int algoBlocks = 0;
+        const CBlockIndex* current = pb;
+        while (current && algoBlocks < lookup) {
+            if (current->GetBlockPowAlgo() == algoName) {
+                workDiff += current->nChainWork - current->pprev->nChainWork;
+                algoBlocks++;
+            }
+            current = current->pprev;
+        }
+        if (algoBlocks == 0)
+            return 0;
+    }
 
+    int64_t timeDiff = maxTime - minTime;
     return workDiff.getdouble() / timeDiff;
 }
 
@@ -98,10 +113,12 @@ static RPCHelpMan getnetworkhashps()
     return RPCHelpMan{"getnetworkhashps",
                 "\nReturns the estimated network hashes per second based on the last n blocks.\n"
                 "Pass in [blocks] to override # of blocks, -1 specifies since last difficulty change.\n"
-                "Pass in [height] to estimate the network speed at the time when a certain block was found.\n",
+                "Pass in [height] to estimate the network speed at the time when a certain block was found.\n"
+                "Pass in [algo] to specify the mining algorithm.\n",
                 {
                     {"nblocks", RPCArg::Type::NUM, RPCArg::Default{120}, "The number of blocks, or -1 for blocks since last difficulty change."},
                     {"height", RPCArg::Type::NUM, RPCArg::Default{-1}, "To estimate at the time of the given height."},
+                    {"algo", RPCArg::Type::STR, RPCArg::Default{"default"}, "Which mining algorithm to use."},
                 },
                 RPCResult{
                     RPCResult::Type::NUM, "", "Hashes per second estimated"},
@@ -110,14 +127,31 @@ static RPCHelpMan getnetworkhashps()
             + HelpExampleRpc("getnetworkhashps", "")
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    ChainstateManager& chainman = EnsureAnyChainman(request.context);
-    LOCK(cs_main);
-    return GetNetworkHashPS(!request.params[0].isNull() ? request.params[0].getInt<int>() : 120, !request.params[1].isNull() ? request.params[1].getInt<int>() : -1, chainman.ActiveChain());
-},
+        {
+            ChainstateManager& chainman = EnsureAnyChainman(request.context);
+            LOCK(cs_main);
+
+            int nblocks = 120; // Default value
+            int height = -1;   // Default value
+            std::string algo = ""; // Default is empty, meaning no specific algo
+
+            if (!request.params[0].isNull()) {
+                nblocks = request.params[0].getInt<int>(); // Convert to int
+            }
+            if (!request.params[1].isNull()) {
+                height = request.params[1].getInt<int>(); // Convert to int
+            }
+            if (!request.params[2].isNull()) {
+                algo = request.params[2].get_str(); // Already a string
+                if (algo == "default") algo = ""; // If "default" is specified, treat it as no specific algo
+            }
+
+            double hashRate = GetNetworkHashPS(nblocks, height, chainman.ActiveChain(), algo);
+
+            return UniValue(hashRate);
+        }
     };
 }
-
 static bool HasExceededTimeout(uint64_t& start_time, uint64_t& max_timeout)
 {
     return (TicksSinceEpoch<std::chrono::seconds>(GetAdjustedTime()) - start_time) >= max_timeout;
@@ -415,8 +449,11 @@ static RPCHelpMan getmininginfo()
                         {RPCResult::Type::NUM, "blocks", "The current block"},
                         {RPCResult::Type::NUM, "currentblockweight", /*optional=*/true, "The block weight of the last assembled block (only present if a block was ever assembled)"},
                         {RPCResult::Type::NUM, "currentblocktx", /*optional=*/true, "The number of block transactions of the last assembled block (only present if a block was ever assembled)"},
+                        {RPCResult::Type::NUM, "pow_algo", "The current algo"},
                         {RPCResult::Type::NUM, "difficulty", "The current difficulty"},
+                        {RPCResult::Type::NUM, "difficulties", "The current difficulty for all 5 MTBC algos."},
                         {RPCResult::Type::NUM, "networkhashps", "The network hashes per second"},
+                        {RPCResult::Type::NUM, "networkhashesps", "The network hashes per second for all 5 MTBC algos."},
                         {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
                         {RPCResult::Type::STR, "chain", "current network name (main, test, signet, regtest)"},
                         {RPCResult::Type::STR, "warnings", "any network and blockchain warnings"},
@@ -438,10 +475,49 @@ static RPCHelpMan getmininginfo()
     if (BlockAssembler::m_last_block_weight) obj.pushKV("currentblockweight", *BlockAssembler::m_last_block_weight);
     if (BlockAssembler::m_last_block_num_txs) obj.pushKV("currentblocktx", *BlockAssembler::m_last_block_num_txs);
     UniValue obj2(UniValue::VOBJ);
+    obj.pushKV("pow_algo",           GetAlgoName(defaultAlgo));
+
     obj2.pushKV("proof-of-work", GetDifficulty(active_chain.Tip()));
     obj2.pushKV("proof-of-stake", GetDifficulty(GetLastPoSBlockIndex(active_chain.Tip())));
     obj.pushKV("difficulty", obj2);
+  
+UniValue result(UniValue::VOBJ);
+const CBlockIndex* pindex = chainman.ActiveChain().Tip();  // Get the current block index
+
+for (unsigned int i = 0; i < NUM_ALGOS; i++) {
+    if (IsAlgoActive(pindex, i, chainman.GetConsensus())) {
+        std::string algoName = GetAlgoName(i);
+        
+        // Get the block index corresponding to the current algorithm
+        const CBlockIndex* algoIndex = GetLastBlockIndexForAlgo(pindex, i, chainman.GetConsensus());
+        
+        if (algoIndex) {
+            // Get the difficulty as double using the block index
+            double algoDifficulty = GetDifficulty(algoIndex);
+            
+            // Add the difficulty directly to the result object
+            result.pushKV(algoName, algoDifficulty);
+        }
+    }
+}
+
+obj.pushKV("difficulties", result); // Push difficulties object to the main object
+
+
+ UniValue networkhashesps(UniValue::VOBJ);
+            for (unsigned int i = 0; i < NUM_ALGOS; i++) {
+                if (IsAlgoActive(pindex, i, chainman.GetConsensus())) {
+                    std::string algoName = GetAlgoName(i);
+
+                    // Calculate the network hash rate for the current algorithm
+                    double algoNetworkhashesps = GetNetworkHashPS(120, -1, chainman.ActiveChain(), algoName);
+
+                    // Add the network hash rate directly to the result object
+                    networkhashesps.pushKV(algoName, algoNetworkhashesps);
+                }
+            } 
     obj.pushKV("networkhashps",    getnetworkhashps().HandleRequest(request));
+    obj.pushKV("networkhashesps",    networkhashesps);
     obj.pushKV("pooledtx",         (uint64_t)mempool.size());
     obj.pushKV("chain", chainman.GetParams().NetworkIDString());
     obj.pushKV("warnings",         GetWarnings(false).original);
@@ -521,7 +597,7 @@ static RPCHelpMan getalgo()
 {
     return RPCHelpMan{"getalgo",
                 "\nReturns the algorithm currently set for mining/getblocktemplate.\n"
-                "Typically set to scrypt by default.\n",
+                "Typically set to scrypt by default. Available algorithms are: scrypt, yescrypt, whirlpool, ghostrider, balloon.\n",
                 {},
                 RPCResult{
                     RPCResult::Type::STR, "", "The current algorithm"},
@@ -540,22 +616,31 @@ static RPCHelpMan setalgo()
 {
     return RPCHelpMan{"setalgo",
         "\nSet the default algorithm for mining/getblocktemplate.\n",
-         {
-             {"algo", RPCArg::Type::STR, RPCArg::Optional::NO, "The name of the algorithm."}
-         },
-         RPCResult{
-             RPCResult::Type::STR, "", "The current algorithm"},
-         RPCExamples{
-             HelpExampleCli("setalgo", "scrypt")
-                },
+        {
+            {"algo", RPCArg::Type::STR, RPCArg::Optional::NO, "The name of the algorithm. Valid values: scrypt, yescrypt, whirlpool, ghostrider, balloon."}
+        },
+        RPCResult{
+            RPCResult::Type::STR, "", "The current algorithm"},
+        RPCExamples{
+            HelpExampleCli("setalgo", "\"scrypt\"")
+            + HelpExampleRpc("setalgo", "\"scrypt\"")
+        },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    const std::string algo_name{request.params[0].get_str()};
+        {
+            const std::string algo_name = request.params[0].get_str();
+            const std::set<std::string> valid_algos = {"scrypt", "yescrypt", "whirlpool", "ghostrider", "balloon"};
 
-    defaultAlgo = MatchAlgoName(algo_name);
+            if (valid_algos.find(algo_name) == valid_algos.end()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid algorithm name. Valid values: scrypt, yescrypt, whirlpool, ghostrider, balloon.");
+            }
 
-    return GetAlgoName(defaultAlgo);
-},
+            std::string previousAlgo = GetAlgoName(defaultAlgo);
+            defaultAlgo = MatchAlgoName(algo_name);
+            std::string currentAlgo = GetAlgoName(defaultAlgo);
+
+            std::string resultMessage = strprintf("Algorithm changed from %s to %s", previousAlgo, currentAlgo);
+            return UniValue(resultMessage);
+        }
     };
 }
 
