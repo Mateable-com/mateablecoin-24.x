@@ -417,9 +417,6 @@
       </layout>
      </item>
      <item>
-      <layout class="QVBoxLayout" name="verticalLayout"/>
-     </item>
-     <item>
       <layout class="QVBoxLayout" name="verticalLayout_3">
        <item>
         <widget class="QFrame" name="frame_2">
